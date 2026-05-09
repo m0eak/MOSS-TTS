@@ -88,6 +88,7 @@ echo.
 echo [INFO] Initialization finished.
 echo [INFO] Next step: double-click "启动 WebUI.bat"
 echo [INFO] WebUI URL: http://127.0.0.1:7860
+if "%WRITE_ONLY%"=="1" exit /b 0
 pause
 exit /b 0
 
@@ -96,7 +97,6 @@ echo.
 echo [INFO] Write-only generation finished.
 echo [INFO] Generated wrapper: %WRAPPER_PY%
 echo [INFO] Generated launchers under: %ROOT%
-pause
 exit /b 0
 
 :ensure_dir
