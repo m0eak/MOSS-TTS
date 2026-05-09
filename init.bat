@@ -10,7 +10,7 @@ set "WRITE_ONLY=0"
 if /I "%MODE%"=="--write-only" set "WRITE_ONLY=1"
 
 set "PYTHON_VERSION=3.12.10"
-set "PYTHON_INSTALLER_URL=https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
+set "PYTHON_NUGET_URL=https://www.nuget.org/api/v2/package/python/3.12.10"
 set "UPSTREAM_REPO_URL=https://github.com/OpenMOSS/MOSS-TTS.git"
 set "UPSTREAM_REPO_BRANCH=main"
 set "TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
@@ -24,7 +24,9 @@ set "DOCS_DIR=%ROOT%\docs"
 set "RUNTIME_DIR=%ROOT%\runtime"
 set "PYTHON_DIR=%RUNTIME_DIR%\python"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
-set "PYTHON_INSTALLER=%RUNTIME_DIR%\python-%PYTHON_VERSION%-amd64.exe"
+set "PYTHON_NUGET_PACKAGE=%RUNTIME_DIR%\python.%PYTHON_VERSION%.nupkg"
+set "PYTHON_NUGET_ZIP=%RUNTIME_DIR%\python.%PYTHON_VERSION%.zip"
+set "PYTHON_EXTRACT_DIR=%RUNTIME_DIR%\python-package"
 set "VENV_DIR=%ROOT%\venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "WEIGHTS_DIR=%ROOT%\weights"
@@ -113,22 +115,33 @@ if exist "%PYTHON_EXE%" (
   exit /b 0
 )
 
-echo [INFO] Downloading Python %PYTHON_VERSION% installer...
-powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYTHON_INSTALLER_URL%' -OutFile '%PYTHON_INSTALLER%'"
+if exist "%PYTHON_NUGET_PACKAGE%" (
+  echo [INFO] Reusing existing Python runtime package: %PYTHON_NUGET_PACKAGE%
+) else (
+  echo [INFO] Downloading Python %PYTHON_VERSION% runtime package...
+  powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYTHON_NUGET_URL%' -OutFile '%PYTHON_NUGET_PACKAGE%'"
+  if errorlevel 1 (
+    echo [ERROR] Failed to download Python runtime package.
+    exit /b 1
+  )
+)
+
+echo [INFO] Extracting local Python runtime...
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item -LiteralPath '%PYTHON_NUGET_PACKAGE%' -Destination '%PYTHON_NUGET_ZIP%' -Force; if (Test-Path -LiteralPath '%PYTHON_EXTRACT_DIR%') { Remove-Item -LiteralPath '%PYTHON_EXTRACT_DIR%' -Recurse -Force }; Expand-Archive -LiteralPath '%PYTHON_NUGET_ZIP%' -DestinationPath '%PYTHON_EXTRACT_DIR%' -Force"
 if errorlevel 1 (
-  echo [ERROR] Failed to download Python installer.
+  echo [ERROR] Failed to extract Python runtime package.
   exit /b 1
 )
 
-echo [INFO] Installing local Python runtime...
-"%PYTHON_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=0 Include_test=0 Include_tcltk=0 Include_launcher=0 InstallLauncherAllUsers=0 Shortcuts=0 TargetDir="%PYTHON_DIR%"
-if errorlevel 1 (
-  echo [ERROR] Failed to install local Python runtime.
+if not exist "%PYTHON_EXTRACT_DIR%\tools\python.exe" (
+  echo [ERROR] Extracted runtime does not contain tools\python.exe
   exit /b 1
 )
 
-if not exist "%PYTHON_EXE%" (
-  echo [ERROR] Python runtime not found after installation: %PYTHON_EXE%
+robocopy "%PYTHON_EXTRACT_DIR%\tools" "%PYTHON_DIR%" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NC /NS >nul
+set "ROBOCOPY_EXIT=%ERRORLEVEL%"
+if %ROBOCOPY_EXIT% GEQ 8 (
+  echo [ERROR] Failed to copy extracted Python runtime. robocopy exit=%ROBOCOPY_EXIT%
   exit /b 1
 )
 
