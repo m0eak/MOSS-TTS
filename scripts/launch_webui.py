@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 from xml.sax.saxutils import escape
 
 import librosa
@@ -24,6 +25,7 @@ OUTPUT_DIR = ROOT / "outputs"
 SRT_OUTPUT_ROOT = OUTPUT_DIR / "srt_jobs"
 ROLE_LIBRARY_DIR = ROOT / "data" / "roles"
 ROLE_LIBRARY_INDEX = ROLE_LIBRARY_DIR / "roles.json"
+WEBUI_PORT_FILE = ROOT / "logs" / "webui.port"
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -1090,6 +1092,19 @@ def build_wrapped_demo(args: argparse.Namespace):
     return demo
 
 
+def _record_bound_port(local_url: str | None) -> None:
+    if not local_url:
+        return
+
+    parsed = urlparse(local_url)
+    if parsed.port is None:
+        return
+
+    WEBUI_PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    WEBUI_PORT_FILE.write_text(str(parsed.port), encoding="utf-8")
+    print(f"[Startup] Recorded active WebUI port: {parsed.port}", flush=True)
+
+
 def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
     base_port = int(args.port)
     max_port = base_port + 10
@@ -1097,12 +1112,13 @@ def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
     for port in range(base_port, max_port + 1):
         try:
             print(f"[Startup] Trying Gradio port {port}", flush=True)
-            demo.queue(max_size=16, default_concurrency_limit=1).launch(
+            _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
                 server_name=args.host,
                 server_port=port,
                 share=args.share,
                 show_error=True,
             )
+            _record_bound_port(local_url)
             return
         except OSError as exc:
             message = str(exc)
@@ -1110,7 +1126,14 @@ def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
                 raise
             print(f"[WARN] Port {port} unavailable, trying next port...", flush=True)
 
-    raise OSError(f"Cannot find empty port in range: {base_port}-{max_port}")
+    print("[WARN] Preferred port range unavailable, requesting an OS-assigned free port...", flush=True)
+    _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
+        server_name=args.host,
+        server_port=0,
+        share=args.share,
+        show_error=True,
+    )
+    _record_bound_port(local_url)
 
 
 def main():
