@@ -1090,6 +1090,29 @@ def build_wrapped_demo(args: argparse.Namespace):
     return demo
 
 
+def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
+    base_port = int(args.port)
+    max_port = base_port + 10
+
+    for port in range(base_port, max_port + 1):
+        try:
+            print(f"[Startup] Trying Gradio port {port}", flush=True)
+            demo.queue(max_size=16, default_concurrency_limit=1).launch(
+                server_name=args.host,
+                server_port=port,
+                share=args.share,
+                show_error=True,
+            )
+            return
+        except OSError as exc:
+            message = str(exc)
+            if "Cannot find empty port in range" not in message:
+                raise
+            print(f"[WARN] Port {port} unavailable, trying next port...", flush=True)
+
+    raise OSError(f"Cannot find empty port in range: {base_port}-{max_port}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Wrapped MossTTS Gradio Demo")
     parser.add_argument("--model_path", type=str, default=moss_tts_app.MODEL_PATH)
@@ -1125,12 +1148,7 @@ def main():
     )
 
     demo = build_wrapped_demo(args)
-    demo.queue(max_size=16, default_concurrency_limit=1).launch(
-        server_name=args.host,
-        server_port=args.port,
-        share=args.share,
-        show_error=True,
-    )
+    launch_with_fallback_ports(demo, args)
 
 
 moss_tts_app.gr.Slider = _safe_slider
