@@ -52,39 +52,68 @@ echo [INFO] Bootstrap root: %ROOT%
 echo [INFO] Upstream repo : %UPSTREAM_REPO_URL% [%UPSTREAM_REPO_BRANCH%]
 if "%WRITE_ONLY%"=="1" echo [INFO] Running in write-only validation mode.
 
-call :ensure_dir "%APP_PARENT%" || exit /b 1
-call :ensure_dir "%SCRIPTS_DIR%" || exit /b 1
-call :ensure_dir "%DOCS_DIR%" || exit /b 1
-call :ensure_dir "%RUNTIME_DIR%" || exit /b 1
-call :ensure_dir "%WEIGHTS_DIR%" || exit /b 1
-call :ensure_dir "%OUTPUTS_DIR%" || exit /b 1
-call :ensure_dir "%SRT_OUTPUT_DIR%" || exit /b 1
-call :ensure_dir "%DATA_DIR%" || exit /b 1
-call :ensure_dir "%ROLES_DIR%" || exit /b 1
-call :ensure_dir "%CACHE_DIR%" || exit /b 1
-call :ensure_dir "%HF_HOME%" || exit /b 1
-call :ensure_dir "%TRANSFORMERS_CACHE%" || exit /b 1
-call :ensure_dir "%MODELSCOPE_CACHE%" || exit /b 1
-call :ensure_dir "%LOGS_DIR%" || exit /b 1
-call :ensure_dir "%OPENMOSS_DIR%" || exit /b 1
+call :ensure_dir "%APP_PARENT%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%SCRIPTS_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%DOCS_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%RUNTIME_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%WEIGHTS_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%OUTPUTS_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%SRT_OUTPUT_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%DATA_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%ROLES_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%CACHE_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%HF_HOME%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%TRANSFORMERS_CACHE%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%MODELSCOPE_CACHE%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%LOGS_DIR%"
+if errorlevel 1 goto :fatal
+call :ensure_dir "%OPENMOSS_DIR%"
+if errorlevel 1 goto :fatal
 
-call :write_wrapper || exit /b 1
-call :write_root_init_wrapper || exit /b 1
-call :write_root_start_cn_wrapper || exit /b 1
-call :write_root_stop_cn_wrapper || exit /b 1
-call :write_root_start_bat || exit /b 1
-call :write_root_stop_bat || exit /b 1
-call :write_docs_readme || exit /b 1
+call :write_wrapper
+if errorlevel 1 goto :fatal
+call :write_root_init_wrapper
+if errorlevel 1 goto :fatal
+call :write_root_start_cn_wrapper
+if errorlevel 1 goto :fatal
+call :write_root_stop_cn_wrapper
+if errorlevel 1 goto :fatal
+call :write_root_start_bat
+if errorlevel 1 goto :fatal
+call :write_root_stop_bat
+if errorlevel 1 goto :fatal
+call :write_docs_readme
+if errorlevel 1 goto :fatal
 
 if "%WRITE_ONLY%"=="1" goto :write_only_done
 
-call :install_local_python || exit /b 1
-call :create_venv || exit /b 1
-call :clone_upstream_repo || exit /b 1
-call :install_packages || exit /b 1
-call :download_models || exit /b 1
-call :create_codec_alias || exit /b 1
-call :export_requirements || exit /b 1
+call :install_local_python
+if errorlevel 1 goto :fatal
+call :create_venv
+if errorlevel 1 goto :fatal
+call :clone_upstream_repo
+if errorlevel 1 goto :fatal
+call :install_packages
+if errorlevel 1 goto :fatal
+call :download_models
+if errorlevel 1 goto :fatal
+call :create_codec_alias
+if errorlevel 1 goto :fatal
+call :export_requirements
+if errorlevel 1 goto :fatal
 
 echo.
 echo [INFO] Initialization finished.
@@ -100,6 +129,13 @@ echo [INFO] Write-only generation finished.
 echo [INFO] Generated wrapper: %WRAPPER_PY%
 echo [INFO] Generated launchers under: %ROOT%
 exit /b 0
+
+:fatal
+echo.
+echo [FATAL] Initialization failed. See the error messages above.
+echo [FATAL] If you launched this by double-clicking, the window is being kept open for inspection.
+pause
+exit /b 1
 
 :ensure_dir
 if not exist "%~1" mkdir "%~1"
