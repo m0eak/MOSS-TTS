@@ -9,9 +9,11 @@ set "MODE=%~1"
 set "WRITE_ONLY=0"
 if /I "%MODE%"=="--write-only" set "WRITE_ONLY=1"
 
+rem Pin bootstrap source to the fork main branch so deployment stays stable
+rem even if upstream OpenMOSS/MOSS-TTS changes in incompatible ways.
 set "PYTHON_VERSION=3.12.10"
 set "PYTHON_NUGET_URL=https://www.nuget.org/api/v2/package/python/3.12.10"
-set "UPSTREAM_REPO_URL=https://github.com/OpenMOSS/MOSS-TTS.git"
+set "UPSTREAM_REPO_URL=https://github.com/m0eak/MOSS-TTS.git"
 set "UPSTREAM_REPO_BRANCH=main"
 set "TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
 set "MODEL_TTS_ID=openmoss/MOSS-TTS-Local-Transformer"
