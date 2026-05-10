@@ -355,6 +355,10 @@ exit /b 0
   echo set "HF_HOME=%%ROOT%%\cache\huggingface"
   echo set "TRANSFORMERS_CACHE=%%ROOT%%\cache\huggingface\transformers"
   echo set "MODELSCOPE_CACHE=%%ROOT%%\cache\modelscope"
+  echo set "PORT_FILE=%%ROOT%%\logs\webui.port"
+  echo set "PORT_MIN=7860"
+  echo set "PORT_MAX=7870"
+  echo set "SELECTED_PORT="
   echo if not exist "%%PYTHON_EXE%%" ^(
   echo   echo [ERROR] Python not found: %%PYTHON_EXE%%
   echo   pause
@@ -373,12 +377,28 @@ exit /b 0
   echo if not exist "%%HF_HOME%%" mkdir "%%HF_HOME%%"
   echo if not exist "%%TRANSFORMERS_CACHE%%" mkdir "%%TRANSFORMERS_CACHE%%"
   echo if not exist "%%MODELSCOPE_CACHE%%" mkdir "%%MODELSCOPE_CACHE%%"
+  echo if not exist "%%ROOT%%\logs" mkdir "%%ROOT%%\logs"
+  echo for /l %%%%P in ^(%%PORT_MIN%%,1,%%PORT_MAX%%^) do ^(
+  echo   netstat -ano ^| findstr /R /C:":%%%%P .*LISTENING" ^>nul
+  echo   if errorlevel 1 ^(
+  echo     set "SELECTED_PORT=%%%%P"
+  echo     goto :port_found
+  echo   ^)
+  echo ^)
+  echo :port_found
+  echo if not defined SELECTED_PORT ^(
+  echo   echo [ERROR] No available port found in range %%PORT_MIN%%-%%PORT_MAX%%.
+  echo   pause
+  echo   exit /b 1
+  echo ^)
+  echo ^> "%%PORT_FILE%%" echo %%SELECTED_PORT%%
   echo echo [INFO] Starting MOSS-TTS WebUI...
   echo echo [INFO] Root: %%ROOT%%
   echo echo [INFO] Model: %%MODEL_PATH%%
-  echo echo [INFO] URL: http://127.0.0.1:7860
+  echo echo [INFO] Port: %%SELECTED_PORT%%
+  echo echo [INFO] URL: http://127.0.0.1:%%SELECTED_PORT%%
   echo echo.
-  echo "%%PYTHON_EXE%%" "%%APP_SCRIPT%%" --model_path "%%MODEL_PATH%%" --device cuda:0
+  echo "%%PYTHON_EXE%%" "%%APP_SCRIPT%%" --model_path "%%MODEL_PATH%%" --device cuda:0 --port %%SELECTED_PORT%%
   echo set "EXIT_CODE=%%ERRORLEVEL%%"
   echo echo.
   echo echo [INFO] WebUI exited with code %%EXIT_CODE%%.
@@ -397,9 +417,14 @@ exit /b 0
   echo setlocal
   echo set "ROOT=%%~dp0"
   echo if "%%ROOT:~-1%%"=="\" set "ROOT=%%ROOT:~0,-1%%"
-  echo set "TARGET_PORT=7860"
+  echo set "TARGET_PORT="
+  echo set "PORT_FILE=%%ROOT%%\logs\webui.port"
   echo set "TARGET_SCRIPT=%%ROOT%%\scripts\launch_webui.py"
   echo set "FOUND_PID="
+  echo if exist "%%PORT_FILE%%" ^(
+  echo   set /p TARGET_PORT^<"%%PORT_FILE%%"
+  echo ^)
+  echo if not defined TARGET_PORT set "TARGET_PORT=7860"
   echo for /f "tokens=5" %%%%P in ^('netstat -ano ^^^| findstr /R /C:":%%TARGET_PORT%% .*LISTENING"'^) do ^(
   echo   set "FOUND_PID=%%%%P"
   echo   goto :have_pid
