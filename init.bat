@@ -328,7 +328,7 @@ if errorlevel 1 (
 exit /b 0
 
 :write_root_start_cn_wrapper
-powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$name = -join ([char[]](0x542F,0x52A8,0x0020,0x0057,0x0065,0x0062,0x0055,0x0049,0x002E,0x0062,0x0061,0x0074)); $target = Join-Path '%ROOT%' $name; $content = @('@echo off','setlocal','call "%%~dp0start_webui.bat"','exit /b %%ERRORLEVEL%%'); Set-Content -LiteralPath $target -Value $content -Encoding ASCII"
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$name = -join ([char[]](0x542F,0x52A8,0x0020,0x0057,0x0065,0x0062,0x0055,0x0049,0x002E,0x0062,0x0061,0x0074)); $target = Join-Path '%ROOT%' $name; $content = @('@echo off','setlocal','set "ROOT=%%~dp0"','if "%%ROOT:~-1%%"=="\" set "ROOT=%%ROOT:~0,-1%%"','set "PYTHON_EXE=%%ROOT%%\venv\Scripts\python.exe"','set "APP_SCRIPT=%%ROOT%%\scripts\launch_webui.py"','set "MODEL_PATH=%%ROOT%%\weights\MOSS-TTS-Local-Transformer"','set "HF_HOME=%%ROOT%%\cache\huggingface"','set "TRANSFORMERS_CACHE=%%ROOT%%\cache\huggingface\transformers"','set "MODELSCOPE_CACHE=%%ROOT%%\cache\modelscope"','set "PORT_FILE=%%ROOT%%\logs\webui.port"','set "PORT_MIN=7860"','set "PORT_MAX=7870"','set "SELECTED_PORT="','if not exist "%%PYTHON_EXE%%" (','  echo [ERROR] Python not found: %%PYTHON_EXE%%','  pause','  exit /b 1',')','if not exist "%%APP_SCRIPT%%" (','  echo [ERROR] launch_webui.py not found: %%APP_SCRIPT%%','  pause','  exit /b 1',')','if not exist "%%MODEL_PATH%%" (','  echo [ERROR] Model path not found: %%MODEL_PATH%%','  pause','  exit /b 1',')','if not exist "%%HF_HOME%%" mkdir "%%HF_HOME%%"','if not exist "%%TRANSFORMERS_CACHE%%" mkdir "%%TRANSFORMERS_CACHE%%"','if not exist "%%MODELSCOPE_CACHE%%" mkdir "%%MODELSCOPE_CACHE%%"','if not exist "%%ROOT%%\logs" mkdir "%%ROOT%%\logs"','for /l %%%%P in (%%PORT_MIN%%,1,%%PORT_MAX%%) do (','  netstat -ano ^| findstr /R /C:":%%%%P .*LISTENING" >nul','  if errorlevel 1 (','    set "SELECTED_PORT=%%%%P"','    goto :port_found','  )',')',':port_found','if not defined SELECTED_PORT (','  echo [ERROR] No available port found in range %%PORT_MIN%%-%%PORT_MAX%%.','  pause','  exit /b 1',')','> "%%PORT_FILE%%" echo %%SELECTED_PORT%%','echo [INFO] Starting MOSS-TTS WebUI...','echo [INFO] Root: %%ROOT%%','echo [INFO] Model: %%MODEL_PATH%%','echo [INFO] Port: %%SELECTED_PORT%%','echo [INFO] URL: http://127.0.0.1:%%SELECTED_PORT%%','echo.','"%%PYTHON_EXE%%" "%%APP_SCRIPT%%" --model_path "%%MODEL_PATH%%" --device cuda:0 --port %%SELECTED_PORT%%','set "EXIT_CODE=%%ERRORLEVEL%%"','echo.','echo [INFO] WebUI exited with code %%EXIT_CODE%%.','pause','exit /b %%EXIT_CODE%%'); Set-Content -LiteralPath $target -Value $content -Encoding ASCII"
 if errorlevel 1 (
   echo [ERROR] Failed to write Chinese start wrapper.
   exit /b 1
@@ -336,7 +336,7 @@ if errorlevel 1 (
 exit /b 0
 
 :write_root_stop_cn_wrapper
-powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$name = -join ([char[]](0x505C,0x6B62,0x0020,0x0057,0x0065,0x0062,0x0055,0x0049,0x002E,0x0062,0x0061,0x0074)); $target = Join-Path '%ROOT%' $name; $content = @('@echo off','setlocal','call "%%~dp0stop_webui.bat"','exit /b %%ERRORLEVEL%%'); Set-Content -LiteralPath $target -Value $content -Encoding ASCII"
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$name = -join ([char[]](0x505C,0x6B62,0x0020,0x0057,0x0065,0x0062,0x0055,0x0049,0x002E,0x0062,0x0061,0x0074)); $target = Join-Path '%ROOT%' $name; $content = @('@echo off','setlocal','set "ROOT=%%~dp0"','if "%%ROOT:~-1%%"=="\" set "ROOT=%%ROOT:~0,-1%%"','set "TARGET_PORT="','set "PORT_FILE=%%ROOT%%\logs\webui.port"','set "TARGET_SCRIPT=%%ROOT%%\scripts\launch_webui.py"','set "FOUND_PID="','if exist "%%PORT_FILE%%" (','  set /p TARGET_PORT<"%%PORT_FILE%%"',')','if not defined TARGET_PORT set "TARGET_PORT=7860"','for /f "tokens=5" %%%%P in (''netstat -ano ^| findstr /R /C:":%%TARGET_PORT%% .*LISTENING"'') do (','  set "FOUND_PID=%%%%P"','  goto :have_pid',')',':have_pid','if not defined FOUND_PID (','  echo [INFO] No listening process found on port %%TARGET_PORT%%.','  pause','  exit /b 0',')','for /f "usebackq delims=" %%%%L in (`powershell -NoLogo -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"ProcessId=%%FOUND_PID%%\").CommandLine"`) do (','  set "CMDLINE=%%%%L"',')','echo [INFO] Found PID %%FOUND_PID%% on port %%TARGET_PORT%%.','echo [INFO] Command: %%CMDLINE%%','echo %%CMDLINE%% ^| find /I "%%TARGET_SCRIPT%%" >nul','if errorlevel 1 (','  echo [WARN] PID %%FOUND_PID%% does not look like the MOSS launch_webui.py process.','  echo [WARN] Refusing to stop it automatically.','  pause','  exit /b 1',')','taskkill /PID %%FOUND_PID%% /T /F','set "EXIT_CODE=%%ERRORLEVEL%%"','echo.','if "%%EXIT_CODE%%"=="0" (','  echo [INFO] MOSS-TTS WebUI stopped.',') else (','  echo [ERROR] Failed to stop PID %%FOUND_PID%%.',')','pause','exit /b %%EXIT_CODE%%'); Set-Content -LiteralPath $target -Value $content -Encoding ASCII"
 if errorlevel 1 (
   echo [ERROR] Failed to write Chinese stop wrapper.
   exit /b 1
@@ -347,63 +347,8 @@ exit /b 0
 > "%ROOT_START_BAT%" (
   echo @echo off
   echo setlocal
-  echo set "ROOT=%%~dp0"
-  echo if "%%ROOT:~-1%%"=="\" set "ROOT=%%ROOT:~0,-1%%"
-  echo set "PYTHON_EXE=%%ROOT%%\venv\Scripts\python.exe"
-  echo set "APP_SCRIPT=%%ROOT%%\scripts\launch_webui.py"
-  echo set "MODEL_PATH=%%ROOT%%\weights\MOSS-TTS-Local-Transformer"
-  echo set "HF_HOME=%%ROOT%%\cache\huggingface"
-  echo set "TRANSFORMERS_CACHE=%%ROOT%%\cache\huggingface\transformers"
-  echo set "MODELSCOPE_CACHE=%%ROOT%%\cache\modelscope"
-  echo set "PORT_FILE=%%ROOT%%\logs\webui.port"
-  echo set "PORT_MIN=7860"
-  echo set "PORT_MAX=7870"
-  echo set "SELECTED_PORT="
-  echo if not exist "%%PYTHON_EXE%%" ^(
-  echo   echo [ERROR] Python not found: %%PYTHON_EXE%%
-  echo   pause
-  echo   exit /b 1
-  echo ^)
-  echo if not exist "%%APP_SCRIPT%%" ^(
-  echo   echo [ERROR] launch_webui.py not found: %%APP_SCRIPT%%
-  echo   pause
-  echo   exit /b 1
-  echo ^)
-  echo if not exist "%%MODEL_PATH%%" ^(
-  echo   echo [ERROR] Model path not found: %%MODEL_PATH%%
-  echo   pause
-  echo   exit /b 1
-  echo ^)
-  echo if not exist "%%HF_HOME%%" mkdir "%%HF_HOME%%"
-  echo if not exist "%%TRANSFORMERS_CACHE%%" mkdir "%%TRANSFORMERS_CACHE%%"
-  echo if not exist "%%MODELSCOPE_CACHE%%" mkdir "%%MODELSCOPE_CACHE%%"
-  echo if not exist "%%ROOT%%\logs" mkdir "%%ROOT%%\logs"
-  echo for /l %%%%P in ^(%%PORT_MIN%%,1,%%PORT_MAX%%^) do ^(
-  echo   netstat -ano ^| findstr /R /C:":%%%%P .*LISTENING" ^>nul
-  echo   if errorlevel 1 ^(
-  echo     set "SELECTED_PORT=%%%%P"
-  echo     goto :port_found
-  echo   ^)
-  echo ^)
-  echo :port_found
-  echo if not defined SELECTED_PORT ^(
-  echo   echo [ERROR] No available port found in range %%PORT_MIN%%-%%PORT_MAX%%.
-  echo   pause
-  echo   exit /b 1
-  echo ^)
-  echo ^> "%%PORT_FILE%%" echo %%SELECTED_PORT%%
-  echo echo [INFO] Starting MOSS-TTS WebUI...
-  echo echo [INFO] Root: %%ROOT%%
-  echo echo [INFO] Model: %%MODEL_PATH%%
-  echo echo [INFO] Port: %%SELECTED_PORT%%
-  echo echo [INFO] URL: http://127.0.0.1:%%SELECTED_PORT%%
-  echo echo.
-  echo "%%PYTHON_EXE%%" "%%APP_SCRIPT%%" --model_path "%%MODEL_PATH%%" --device cuda:0 --port %%SELECTED_PORT%%
-  echo set "EXIT_CODE=%%ERRORLEVEL%%"
-  echo echo.
-  echo echo [INFO] WebUI exited with code %%EXIT_CODE%%.
-  echo pause
-  echo exit /b %%EXIT_CODE%%
+  echo call "%%~dp0启动 WebUI.bat"
+  echo exit /b %%ERRORLEVEL%%
 )
 if errorlevel 1 (
   echo [ERROR] Failed to write %ROOT_START_BAT%
@@ -415,48 +360,8 @@ exit /b 0
 > "%ROOT_STOP_BAT%" (
   echo @echo off
   echo setlocal
-  echo set "ROOT=%%~dp0"
-  echo if "%%ROOT:~-1%%"=="\" set "ROOT=%%ROOT:~0,-1%%"
-  echo set "TARGET_PORT="
-  echo set "PORT_FILE=%%ROOT%%\logs\webui.port"
-  echo set "TARGET_SCRIPT=%%ROOT%%\scripts\launch_webui.py"
-  echo set "FOUND_PID="
-  echo if exist "%%PORT_FILE%%" ^(
-  echo   set /p TARGET_PORT^<"%%PORT_FILE%%"
-  echo ^)
-  echo if not defined TARGET_PORT set "TARGET_PORT=7860"
-  echo for /f "tokens=5" %%%%P in ^('netstat -ano ^^^| findstr /R /C:":%%TARGET_PORT%% .*LISTENING"'^) do ^(
-  echo   set "FOUND_PID=%%%%P"
-  echo   goto :have_pid
-  echo ^)
-  echo :have_pid
-  echo if not defined FOUND_PID ^(
-  echo   echo [INFO] No listening process found on port %%TARGET_PORT%%.
-  echo   pause
-  echo   exit /b 0
-  echo ^)
-  echo for /f "usebackq delims=" %%%%L in ^(`powershell -NoLogo -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"ProcessId=%%FOUND_PID%%\").CommandLine"`^) do ^(
-  echo   set "CMDLINE=%%%%L"
-  echo ^)
-  echo echo [INFO] Found PID %%FOUND_PID%% on port %%TARGET_PORT%%.
-  echo echo [INFO] Command: %%CMDLINE%%
-  echo echo %%CMDLINE%% ^| find /I "%%TARGET_SCRIPT%%" ^>nul
-  echo if errorlevel 1 ^(
-  echo   echo [WARN] PID %%FOUND_PID%% does not look like the MOSS launch_webui.py process.
-  echo   echo [WARN] Refusing to stop it automatically.
-  echo   pause
-  echo   exit /b 1
-  echo ^)
-  echo taskkill /PID %%FOUND_PID%% /T /F
-  echo set "EXIT_CODE=%%ERRORLEVEL%%"
-  echo echo.
-  echo if "%%EXIT_CODE%%"=="0" ^(
-  echo   echo [INFO] MOSS-TTS WebUI stopped.
-  echo ^) else ^(
-  echo   echo [ERROR] Failed to stop PID %%FOUND_PID%%.
-  echo ^)
-  echo pause
-  echo exit /b %%EXIT_CODE%%
+  echo call "%%~dp0停止 WebUI.bat"
+  echo exit /b %%ERRORLEVEL%%
 )
 if errorlevel 1 (
   echo [ERROR] Failed to write %ROOT_STOP_BAT%
