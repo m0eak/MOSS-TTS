@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -1105,15 +1106,23 @@ def _record_bound_port(local_url: str | None) -> None:
     print(f"[Startup] Recorded active WebUI port: {parsed.port}", flush=True)
 
 
+def _reserve_os_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        return int(sock.getsockname()[1])
+
+
 def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
     base_port = int(args.port)
     max_port = base_port + 10
+    host = args.host
 
     for port in range(base_port, max_port + 1):
         try:
             print(f"[Startup] Trying Gradio port {port}", flush=True)
             _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
-                server_name=args.host,
+                server_name=host,
                 server_port=port,
                 share=args.share,
                 show_error=True,
@@ -1127,9 +1136,11 @@ def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
             print(f"[WARN] Port {port} unavailable, trying next port...", flush=True)
 
     print("[WARN] Preferred port range unavailable, requesting an OS-assigned free port...", flush=True)
+    fallback_port = _reserve_os_port()
+    print(f"[Startup] Trying Gradio port {fallback_port} (OS-assigned)", flush=True)
     _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
-        server_name=args.host,
-        server_port=0,
+        server_name=host,
+        server_port=fallback_port,
         share=args.share,
         show_error=True,
     )
@@ -1141,7 +1152,7 @@ def main():
     parser.add_argument("--model_path", type=str, default=moss_tts_app.MODEL_PATH)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--attn_implementation", type=str, default=moss_tts_app.DEFAULT_ATTN_IMPLEMENTATION)
-    parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--share", action="store_true")
     args = parser.parse_args()
