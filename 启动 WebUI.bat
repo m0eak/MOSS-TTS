@@ -13,6 +13,7 @@ set "PORT_FILE=%ROOT%\logs\webui.port"
 set "PORT_MIN=7860"
 set "PORT_MAX=7870"
 set "SELECTED_PORT="
+set "PORT_ARG="
 
 if not exist "%PYTHON_EXE%" (
   echo [ERROR] Python not found: %PYTHON_EXE%
@@ -46,22 +47,26 @@ for /l %%P in (%PORT_MIN%,1,%PORT_MAX%) do (
 )
 
 :port_found
-if not defined SELECTED_PORT (
-  echo [ERROR] No available port found in range %PORT_MIN%-%PORT_MAX%.
-  pause
-  exit /b 1
+if defined SELECTED_PORT (
+  > "%PORT_FILE%" echo !SELECTED_PORT!
+  set "PORT_ARG=--port !SELECTED_PORT!"
+  echo [INFO] Starting MOSS-TTS WebUI...
+  echo [INFO] Root: %ROOT%
+  echo [INFO] Model: %MODEL_PATH%
+  echo [INFO] Preferred port: !SELECTED_PORT!
+  echo [INFO] URL: http://127.0.0.1:!SELECTED_PORT!
+) else (
+  if exist "%PORT_FILE%" del /q "%PORT_FILE%" >nul 2>nul
+  echo [WARN] No available port found in range %PORT_MIN%-%PORT_MAX%.
+  echo [WARN] Starting WebUI without a fixed preferred port. Python will try its default port once, then fall back to an OS-assigned free port.
+  echo [INFO] Starting MOSS-TTS WebUI...
+  echo [INFO] Root: %ROOT%
+  echo [INFO] Model: %MODEL_PATH%
 )
 
-> "%PORT_FILE%" echo !SELECTED_PORT!
-
-echo [INFO] Starting MOSS-TTS WebUI...
-echo [INFO] Root: %ROOT%
-echo [INFO] Model: %MODEL_PATH%
-echo [INFO] Port: !SELECTED_PORT!
-echo [INFO] URL: http://127.0.0.1:!SELECTED_PORT!
 echo.
 
-"%PYTHON_EXE%" "%APP_SCRIPT%" --model_path "%MODEL_PATH%" --device cuda:0 --port !SELECTED_PORT!
+"%PYTHON_EXE%" "%APP_SCRIPT%" --model_path "%MODEL_PATH%" --device cuda:0 %PORT_ARG%
 
 set "EXIT_CODE=%ERRORLEVEL%"
 echo.

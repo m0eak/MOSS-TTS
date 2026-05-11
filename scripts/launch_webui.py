@@ -959,7 +959,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             headers=["序号", "开始", "结束", "文本"],
                             datatype=["str", "str", "str", "str"],
                             row_count=(1, "dynamic"),
-                            col_count=(4, "fixed"),
+                            column_count=(4, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="字幕预览",
@@ -970,7 +970,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             headers=["序号", "开始", "结束", "文本", "输出文件", "状态"],
                             datatype=["str", "str", "str", "str", "str", "str"],
                             row_count=(1, "dynamic"),
-                            col_count=(6, "fixed"),
+                            column_count=(6, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="生成结果",
@@ -980,7 +980,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             value=[[role, str(audio_path), text] for role, audio_path, text in moss_tts_app.EXAMPLE_ROWS],
                             datatype=["str", "str", "str"],
                             row_count=(len(moss_tts_app.EXAMPLE_ROWS), "fixed"),
-                            col_count=(3, "fixed"),
+                            column_count=(3, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="Examples (click a row to fill inputs)",
@@ -990,7 +990,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             value=get_role_table_rows(),
                             datatype=["str", "str", "str"],
                             row_count=(1, "dynamic"),
-                            col_count=(3, "fixed"),
+                            column_count=(3, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="自定义角色库（click a row to fill inputs）",
@@ -1114,28 +1114,23 @@ def _reserve_os_port() -> int:
 
 
 def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
-    base_port = int(args.port)
-    max_port = base_port + 10
+    preferred_port = int(args.port)
     host = args.host
 
-    for port in range(base_port, max_port + 1):
-        try:
-            print(f"[Startup] Trying Gradio port {port}", flush=True)
-            _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
-                server_name=host,
-                server_port=port,
-                share=args.share,
-                show_error=True,
-            )
-            _record_bound_port(local_url)
-            return
-        except OSError as exc:
-            message = str(exc)
-            if "Cannot find empty port in range" not in message:
-                raise
-            print(f"[WARN] Port {port} unavailable, trying next port...", flush=True)
+    try:
+        print(f"[Startup] Trying Gradio port {preferred_port}", flush=True)
+        _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
+            server_name=host,
+            server_port=preferred_port,
+            share=args.share,
+            show_error=True,
+        )
+        _record_bound_port(local_url)
+        return
+    except OSError as exc:
+        print(f"[WARN] Preferred port {preferred_port} unavailable: {exc}", flush=True)
 
-    print("[WARN] Preferred port range unavailable, requesting an OS-assigned free port...", flush=True)
+    print("[WARN] Preferred port unavailable, requesting an OS-assigned free port...", flush=True)
     fallback_port = _reserve_os_port()
     print(f"[Startup] Trying Gradio port {fallback_port} (OS-assigned)", flush=True)
     _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
