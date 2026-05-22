@@ -67,10 +67,10 @@ MODE_CLONE = "Clone"
 
 SRT_PARAMETER_PRESETS = {
     "教程配音": {
-        "temperature": 1.25,
-        "top_p": 0.75,
-        "top_k": 20,
-        "repetition_penalty": 1.05,
+        "temperature": 1.5,
+        "top_p": 0.8,
+        "top_k": 25,
+        "repetition_penalty": 1.0,
         "max_new_tokens": 512,
     },
     "自然口播版": {
