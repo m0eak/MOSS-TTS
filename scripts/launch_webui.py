@@ -1,17 +1,15 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
 import os
 import re
-import socket
 import sys
 import tempfile
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 from xml.sax.saxutils import escape
 
 import librosa
@@ -26,7 +24,6 @@ OUTPUT_DIR = ROOT / "outputs"
 SRT_OUTPUT_ROOT = OUTPUT_DIR / "srt_jobs"
 ROLE_LIBRARY_DIR = ROOT / "data" / "roles"
 ROLE_LIBRARY_INDEX = ROLE_LIBRARY_DIR / "roles.json"
-WEBUI_PORT_FILE = ROOT / "logs" / "webui.port"
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -959,7 +956,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             headers=["序号", "开始", "结束", "文本"],
                             datatype=["str", "str", "str", "str"],
                             row_count=(1, "dynamic"),
-                            column_count=(4, "fixed"),
+                            col_count=(4, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="字幕预览",
@@ -970,7 +967,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             headers=["序号", "开始", "结束", "文本", "输出文件", "状态"],
                             datatype=["str", "str", "str", "str", "str", "str"],
                             row_count=(1, "dynamic"),
-                            column_count=(6, "fixed"),
+                            col_count=(6, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="生成结果",
@@ -980,7 +977,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             value=[[role, str(audio_path), text] for role, audio_path, text in moss_tts_app.EXAMPLE_ROWS],
                             datatype=["str", "str", "str"],
                             row_count=(len(moss_tts_app.EXAMPLE_ROWS), "fixed"),
-                            column_count=(3, "fixed"),
+                            col_count=(3, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="Examples (click a row to fill inputs)",
@@ -990,7 +987,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                             value=get_role_table_rows(),
                             datatype=["str", "str", "str"],
                             row_count=(1, "dynamic"),
-                            column_count=(3, "fixed"),
+                            col_count=(3, "fixed"),
                             interactive=False,
                             wrap=True,
                             label="自定义角色库（click a row to fill inputs）",
@@ -1093,61 +1090,12 @@ def build_wrapped_demo(args: argparse.Namespace):
     return demo
 
 
-def _record_bound_port(local_url: str | None) -> None:
-    if not local_url:
-        return
-
-    parsed = urlparse(local_url)
-    if parsed.port is None:
-        return
-
-    WEBUI_PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    WEBUI_PORT_FILE.write_text(str(parsed.port), encoding="utf-8")
-    print(f"[Startup] Recorded active WebUI port: {parsed.port}", flush=True)
-
-
-def _reserve_os_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
-
-
-def launch_with_fallback_ports(demo, args: argparse.Namespace) -> None:
-    preferred_port = int(args.port)
-    host = args.host
-
-    try:
-        print(f"[Startup] Trying Gradio port {preferred_port}", flush=True)
-        _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
-            server_name=host,
-            server_port=preferred_port,
-            share=args.share,
-            show_error=True,
-        )
-        _record_bound_port(local_url)
-        return
-    except OSError as exc:
-        print(f"[WARN] Preferred port {preferred_port} unavailable: {exc}", flush=True)
-
-    print("[WARN] Preferred port unavailable, requesting an OS-assigned free port...", flush=True)
-    fallback_port = _reserve_os_port()
-    print(f"[Startup] Trying Gradio port {fallback_port} (OS-assigned)", flush=True)
-    _, local_url, _ = demo.queue(max_size=16, default_concurrency_limit=1).launch(
-        server_name=host,
-        server_port=fallback_port,
-        share=args.share,
-        show_error=True,
-    )
-    _record_bound_port(local_url)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Wrapped MossTTS Gradio Demo")
     parser.add_argument("--model_path", type=str, default=moss_tts_app.MODEL_PATH)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--attn_implementation", type=str, default=moss_tts_app.DEFAULT_ATTN_IMPLEMENTATION)
-    parser.add_argument("--host", type=str, default="127.0.0.1")
+    parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--share", action="store_true")
     args = parser.parse_args()
@@ -1177,7 +1125,12 @@ def main():
     )
 
     demo = build_wrapped_demo(args)
-    launch_with_fallback_ports(demo, args)
+    demo.queue(max_size=16, default_concurrency_limit=1).launch(
+        server_name=args.host,
+        server_port=args.port,
+        share=args.share,
+        show_error=True,
+    )
 
 
 moss_tts_app.gr.Slider = _safe_slider
