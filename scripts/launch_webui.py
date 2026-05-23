@@ -697,6 +697,85 @@ def _build_premiere_xml(job_name: str, clips: list[TimelineClip], xml_path: Path
     return xml_path
 
 
+def _write_job_manifest(job_dir: Path, manifest: list[dict[str, object]]) -> Path:
+    manifest_path = job_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest_path
+
+
+def _write_job_progress(
+    job_dir: Path,
+    *,
+    job_name: str,
+    total: int,
+    processed: int,
+    success: int,
+    failed: int,
+    last_subtitle_index: int | None,
+    status: str,
+    stopped: bool,
+) -> Path:
+    progress_path = job_dir / "progress.json"
+    payload = {
+        "job_name": job_name,
+        "status": status,
+        "total": int(total),
+        "processed": int(processed),
+        "success": int(success),
+        "failed": int(failed),
+        "last_subtitle_index": None if last_subtitle_index is None else int(last_subtitle_index),
+        "stopped": bool(stopped),
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    progress_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return progress_path
+
+
+def load_existing_srt_job(job_name_or_path: str):
+    raw = (job_name_or_path or "").strip()
+    if not raw:
+        return [], "请输入任务名或任务目录。", ""
+
+    candidate = Path(raw)
+    job_dir = candidate if candidate.is_absolute() else (SRT_OUTPUT_ROOT / raw)
+    if not job_dir.exists() or not job_dir.is_dir():
+        return [], f"任务目录不存在：{job_dir}", str(job_dir)
+
+    manifest_path = job_dir / "manifest.json"
+    progress_path = job_dir / "progress.json"
+    if not manifest_path.exists():
+        return [], f"未找到 manifest.json：{job_dir}", str(job_dir)
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    rows: list[list[str]] = []
+    for item in manifest:
+        rows.append([
+            str(item.get("subtitle_index", "")),
+            str(item.get("start", "")),
+            str(item.get("end", "")),
+            str(item.get("text", "")),
+            str(item.get("output_file", "")),
+            str(item.get("status", "")),
+        ])
+
+    if progress_path.exists():
+        progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        status_text = (
+            f"已加载任务：{job_dir.name} | status={progress.get('status', 'unknown')} | "
+            f"processed={progress.get('processed', 0)}/{progress.get('total', 0)} | "
+            f"success={progress.get('success', 0)} | failed={progress.get('failed', 0)}"
+        )
+    else:
+        success_count = sum(1 for item in manifest if str(item.get("status", "")) == "ok")
+        error_count = sum(1 for item in manifest if str(item.get("status", "")) == "error")
+        status_text = (
+            f"已加载任务：{job_dir.name} | processed={len(manifest)} | "
+            f"success={success_count} | failed={error_count}"
+        )
+
+    return rows, status_text, str(job_dir)
+
+
 def generate_srt_segments(
     srt_file: str | None,
     reference_audio: str | None,
@@ -737,6 +816,19 @@ def generate_srt_segments(
     rows: list[list[str]] = []
     used_output_names: set[str] = set()
     timeline_clips: list[TimelineClip] = []
+
+    _write_job_manifest(job_dir, manifest)
+    _write_job_progress(
+        job_dir,
+        job_name=job_dir.name,
+        total=len(entries),
+        processed=0,
+        success=0,
+        failed=0,
+        last_subtitle_index=None,
+        status="running",
+        stopped=False,
+    )
 
     yield rows, f"Started SRT job in {job_dir} | total={len(entries)}", str(job_dir)
 
@@ -814,6 +906,21 @@ def generate_srt_segments(
                 )
             rows.append(row)
 
+            success_count = sum(1 for item in manifest if item["status"] == "ok")
+            failed_count = sum(1 for item in manifest if item["status"] == "error")
+            _write_job_manifest(job_dir, manifest)
+            _write_job_progress(
+                job_dir,
+                job_name=job_dir.name,
+                total=len(entries),
+                processed=len(manifest),
+                success=success_count,
+                failed=failed_count,
+                last_subtitle_index=entry.index,
+                status="running",
+                stopped=bool(_srt_stop_event.is_set()),
+            )
+
             progress_state = "Stopping requested" if _srt_stop_event.is_set() else "Running"
             yield (
                 rows,
@@ -837,10 +944,23 @@ def generate_srt_segments(
             if output_file in track_by_output_file:
                 item["timeline_track"] = track_by_output_file[output_file]
 
-        manifest_path = job_dir / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        manifest_path = _write_job_manifest(job_dir, manifest)
 
         success_count = sum(1 for item in manifest if item["status"] == "ok")
+        failed_count = sum(1 for item in manifest if item["status"] == "error")
+        final_status = "stopped" if stopped else "finished"
+        _write_job_progress(
+            job_dir,
+            job_name=job_dir.name,
+            total=len(entries),
+            processed=len(manifest),
+            success=success_count,
+            failed=failed_count,
+            last_subtitle_index=(None if not manifest else int(manifest[-1]["subtitle_index"])),
+            status=final_status,
+            stopped=stopped,
+        )
+
         if stopped:
             status_text = (
                 f"Stopped SRT job in {job_dir} | success={success_count}/{len(manifest)} | "
@@ -963,6 +1083,8 @@ def build_wrapped_demo(args: argparse.Namespace):
                         )
                         srt_result_status = gr.Textbox(label="生成状态", interactive=False, lines=4)
                         srt_result_dir = gr.Textbox(label="输出目录", interactive=False)
+                        srt_load_job_name = gr.Textbox(label="加载已有任务（任务名或目录，可选）", placeholder="例如：20260523_123000 或完整目录路径")
+                        srt_load_job_btn = gr.Button("加载已有任务", variant="secondary")
                         srt_result_table = gr.Dataframe(
                             headers=["序号", "开始", "结束", "文本", "输出文件", "状态"],
                             datatype=["str", "str", "str", "str", "str", "str"],
@@ -1067,6 +1189,12 @@ def build_wrapped_demo(args: argparse.Namespace):
                     inputs=None,
                     outputs=[srt_result_status],
                     queue=False,
+                )
+
+                srt_load_job_btn.click(
+                    fn=load_existing_srt_job,
+                    inputs=[srt_load_job_name],
+                    outputs=[srt_result_table, srt_result_status, srt_result_dir],
                 )
 
                 srt_run_btn.click(
