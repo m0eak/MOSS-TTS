@@ -776,6 +776,28 @@ def load_existing_srt_job(job_name_or_path: str):
     return rows, status_text, str(job_dir)
 
 
+def _load_existing_manifest_for_resume(job_dir: Path) -> tuple[list[dict[str, object]], dict[int, dict[str, object]]]:
+    manifest_path = job_dir / "manifest.json"
+    if not manifest_path.exists():
+        return [], {}
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    completed: dict[int, dict[str, object]] = {}
+    for item in manifest:
+        try:
+            subtitle_index = int(item.get("subtitle_index"))
+        except Exception:
+            continue
+        output_file = str(item.get("output_file", "") or "")
+        status = str(item.get("status", "") or "")
+        if status != "ok" or not output_file:
+            continue
+        out_path = job_dir / output_file
+        if out_path.exists() and out_path.is_file():
+            completed[subtitle_index] = item
+    return manifest, completed
+
+
 def generate_srt_segments(
     srt_file: str | None,
     reference_audio: str | None,
@@ -783,6 +805,7 @@ def generate_srt_segments(
     custom_role: str,
     job_name: str,
     skip_empty: bool,
+    resume_existing_job: bool,
     temperature: float,
     top_p: float,
     top_k: int,
@@ -816,25 +839,74 @@ def generate_srt_segments(
     rows: list[list[str]] = []
     used_output_names: set[str] = set()
     timeline_clips: list[TimelineClip] = []
+    completed_entries: dict[int, dict[str, object]] = {}
+    resumed_count = 0
+
+    if resume_existing_job:
+        existing_manifest, completed_entries = _load_existing_manifest_for_resume(job_dir)
+        manifest = [dict(item) for item in existing_manifest]
+        seen_files = {
+            str(item.get("output_file", "") or "")
+            for item in manifest
+            if str(item.get("output_file", "") or "")
+        }
+        used_output_names = set(seen_files)
+        for subtitle_index, item in sorted(completed_entries.items()):
+            output_file = str(item.get("output_file", "") or "")
+            out_path = job_dir / output_file
+            try:
+                audio_duration_seconds = _get_audio_duration_seconds(str(out_path))
+                clip_start_seconds = float(item.get("timeline_start_seconds", _parse_srt_timestamp(str(item.get("start", "")))))
+                generated_end_seconds = float(item.get("timeline_end_seconds", clip_start_seconds + audio_duration_seconds))
+                timeline_clips.append(
+                    TimelineClip(
+                        subtitle_index=subtitle_index,
+                        clip_name=output_file,
+                        file_name=output_file,
+                        file_path=str(out_path),
+                        start_seconds=clip_start_seconds,
+                        end_seconds=generated_end_seconds,
+                        audio_duration_seconds=audio_duration_seconds,
+                    )
+                )
+            except Exception:
+                pass
+        resumed_count = len(completed_entries)
+        for entry in entries:
+            if entry.index in completed_entries:
+                item = completed_entries[entry.index]
+                rows.append([
+                    str(entry.index),
+                    entry.start,
+                    entry.end,
+                    entry.text,
+                    str(item.get("output_file", "")),
+                    "ok(existing)",
+                ])
 
     _write_job_manifest(job_dir, manifest)
     _write_job_progress(
         job_dir,
         job_name=job_dir.name,
         total=len(entries),
-        processed=0,
-        success=0,
-        failed=0,
-        last_subtitle_index=None,
+        processed=len(manifest),
+        success=sum(1 for item in manifest if item["status"] == "ok"),
+        failed=sum(1 for item in manifest if item["status"] == "error"),
+        last_subtitle_index=(None if not manifest else int(manifest[-1]["subtitle_index"])),
         status="running",
         stopped=False,
     )
 
-    yield rows, f"Started SRT job in {job_dir} | total={len(entries)}", str(job_dir)
+    start_message = f"Started SRT job in {job_dir} | total={len(entries)}"
+    if resume_existing_job:
+        start_message += f" | resumed={resumed_count}"
+    yield rows, start_message, str(job_dir)
 
     stopped = False
     try:
         for processed_count, entry in enumerate(entries, start=1):
+            if entry.index in completed_entries:
+                continue
             if _srt_stop_event.is_set():
                 stopped = True
                 break
@@ -991,6 +1063,7 @@ def build_wrapped_demo(args: argparse.Namespace):
         custom_role,
         job_name,
         skip_empty,
+        resume_existing_job,
         temperature,
         top_p,
         top_k,
@@ -1004,6 +1077,7 @@ def build_wrapped_demo(args: argparse.Namespace):
             custom_role=custom_role,
             job_name=job_name,
             skip_empty=skip_empty,
+            resume_existing_job=resume_existing_job,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
@@ -1050,6 +1124,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                         )
                         srt_job_name = gr.Textbox(label="输出任务名（可选）", placeholder="留空则使用时间戳")
                         srt_skip_empty = gr.Checkbox(value=True, label="跳过空字幕")
+                        srt_resume_existing_job = gr.Checkbox(value=True, label="继续已有任务（跳过已完成片段）")
 
                         with gr.Accordion("SRT 生成参数", open=True):
                             gr.Markdown("点击下方预设可快速回填参数，不会修改风格提示词、参考音频或模式。")
@@ -1206,6 +1281,7 @@ def build_wrapped_demo(args: argparse.Namespace):
                         srt_custom_role,
                         srt_job_name,
                         srt_skip_empty,
+                        srt_resume_existing_job,
                         srt_temperature,
                         srt_top_p,
                         srt_top_k,

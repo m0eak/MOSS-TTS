@@ -17,6 +17,8 @@ This branch is intended to:
 - local role library
 - parameter presets
 - stop current generation
+- load existing task results
+- resume the same job by skipping completed segments
 - Premiere XML export
 - WebUI port fallback improvements
 - some Gradio compatibility fixes
