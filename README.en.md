@@ -19,6 +19,9 @@ This branch is intended to:
 - stop current generation
 - load existing task results
 - resume the same job by skipping completed segments
+- stable-continuity parameter preset
+- segment consistency prompt toggle
+- optional random seed control
 - Premiere XML export
 - WebUI port fallback improvements
 - some Gradio compatibility fixes

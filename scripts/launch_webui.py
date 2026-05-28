@@ -77,6 +77,13 @@ SRT_PARAMETER_PRESETS = {
         "repetition_penalty": 1.0,
         "max_new_tokens": 512,
     },
+    "稳定连续版": {
+        "temperature": 1.35,
+        "top_p": 0.78,
+        "top_k": 20,
+        "repetition_penalty": 1.02,
+        "max_new_tokens": 512,
+    },
     "稍有感情但不过火版": {
         "temperature": 1.7,
         "top_p": 0.85,
@@ -137,6 +144,26 @@ def _safe_torchaudio_load(path, *args, **kwargs):
                 audio = audio[None, :]
             waveform = torch.as_tensor(audio, dtype=torch.float32)
             return waveform, int(sr)
+
+
+def _merge_consistency_instruction(custom_role: str | None) -> str:
+    consistency = (
+        "请尽量保持所有字幕分段的音色、语速、音量和语气一致。"
+        "使用稳定、自然、连贯的讲述方式，不要在不同分段之间突然改变情绪或说话风格。"
+    )
+    custom_role = (custom_role or "").strip()
+    if custom_role:
+        return f"{custom_role}\n{consistency}"
+    return consistency
+
+
+def _set_generation_seed(seed: int | None) -> None:
+    if seed is None or int(seed) < 0:
+        return
+    resolved_seed = int(seed)
+    torch.manual_seed(resolved_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(resolved_seed)
 
 
 def _load_role_index() -> list[RoleEntry]:
@@ -251,6 +278,7 @@ def _generate_audio_file(
     device: str,
     attn_implementation: str,
     max_new_tokens: int,
+    seed: int | None = None,
 ) -> tuple[str, str]:
     started_at = time.monotonic()
     model, processor, torch_device, sample_rate = moss_tts_app.load_backend(
@@ -277,6 +305,7 @@ def _generate_audio_file(
     attention_mask = batch["attention_mask"].to(torch_device)
 
     with torch.no_grad():
+        _set_generation_seed(seed)
         outputs = model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -317,7 +346,8 @@ def _generate_audio_file(
         f"Done | mode: {mode_name} | elapsed: {elapsed:.2f}s | "
         f"max_new_tokens={int(max_new_tokens)}, "
         f"audio_temperature={float(temperature):.2f}, audio_top_p={float(top_p):.2f}, "
-        f"audio_top_k={int(top_k)}, audio_repetition_penalty={float(repetition_penalty):.2f}"
+        f"audio_top_k={int(top_k)}, audio_repetition_penalty={float(repetition_penalty):.2f}, "
+        f"seed={seed if seed is not None else -1}"
     )
     return str(tmp_path), status
 
@@ -806,6 +836,8 @@ def generate_srt_segments(
     job_name: str,
     skip_empty: bool,
     resume_existing_job: bool,
+    keep_consistency: bool,
+    seed: float,
     temperature: float,
     top_p: float,
     top_k: int,
@@ -913,10 +945,13 @@ def generate_srt_segments(
 
             try:
                 actual_reference_audio = reference_audio if resolved_mode == MODE_CLONE else None
+                actual_instruction = _merge_consistency_instruction(custom_role) if keep_consistency else custom_role
+                base_seed = int(seed)
+                actual_seed = None if base_seed < 0 else base_seed + int(entry.index)
                 audio_path, status = _generate_audio_file(
                     text=entry.text,
                     reference_audio=actual_reference_audio,
-                    instruction=custom_role,
+                    instruction=actual_instruction,
                     temperature=temperature,
                     top_p=top_p,
                     top_k=top_k,
@@ -925,6 +960,7 @@ def generate_srt_segments(
                     device=device,
                     attn_implementation=attn_implementation,
                     max_new_tokens=max_new_tokens,
+                    seed=actual_seed,
                 )
                 out_name = _build_segment_output_name(entry.index, used_output_names)
                 out_path = job_dir / out_name
@@ -952,6 +988,8 @@ def generate_srt_segments(
                         "end": entry.end,
                         "text": entry.text,
                         "custom_role": custom_role,
+                        "keep_consistency": bool(keep_consistency),
+                        "seed": -1 if actual_seed is None else int(actual_seed),
                         "output_file": out_name,
                         "timeline_start_seconds": clip_start_seconds,
                         "subtitle_end_seconds": clip_end_seconds,
@@ -971,6 +1009,8 @@ def generate_srt_segments(
                         "end": entry.end,
                         "text": entry.text,
                         "custom_role": custom_role,
+                        "keep_consistency": bool(keep_consistency),
+                        "seed": -1,
                         "output_file": "",
                         "status": "error",
                         "message": str(exc),
@@ -1064,6 +1104,8 @@ def build_wrapped_demo(args: argparse.Namespace):
         job_name,
         skip_empty,
         resume_existing_job,
+        keep_consistency,
+        seed,
         temperature,
         top_p,
         top_k,
@@ -1078,6 +1120,8 @@ def build_wrapped_demo(args: argparse.Namespace):
             job_name=job_name,
             skip_empty=skip_empty,
             resume_existing_job=resume_existing_job,
+            keep_consistency=keep_consistency,
+            seed=seed,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
@@ -1125,12 +1169,15 @@ def build_wrapped_demo(args: argparse.Namespace):
                         srt_job_name = gr.Textbox(label="输出任务名（可选）", placeholder="留空则使用时间戳")
                         srt_skip_empty = gr.Checkbox(value=True, label="跳过空字幕")
                         srt_resume_existing_job = gr.Checkbox(value=True, label="继续已有任务（跳过已完成片段）")
+                        srt_keep_consistency = gr.Checkbox(value=True, label="保持分段一致性")
+                        srt_seed = gr.Number(value=-1, precision=0, label="随机种子（-1 表示随机）")
 
                         with gr.Accordion("SRT 生成参数", open=True):
                             gr.Markdown("点击下方预设可快速回填参数，不会修改风格提示词、参考音频或模式。")
                             with gr.Row():
                                 srt_preset_tutorial_btn = gr.Button("教程配音", variant="secondary")
                                 srt_preset_natural_btn = gr.Button("自然口播版", variant="secondary")
+                                srt_preset_stable_btn = gr.Button("稳定连续版", variant="secondary")
                                 srt_preset_expressive_btn = gr.Button("稍有感情但不过火版", variant="secondary")
                             srt_temperature = gr.Slider(minimum=0.1, maximum=3.0, step=0.05, value=1.7, label="temperature")
                             srt_top_p = gr.Slider(minimum=0.1, maximum=1.0, step=0.01, value=0.8, label="top_p")
@@ -1246,6 +1293,19 @@ def build_wrapped_demo(args: argparse.Namespace):
                     ],
                 )
 
+                srt_preset_stable_btn.click(
+                    fn=lambda: apply_srt_parameter_preset("稳定连续版"),
+                    inputs=None,
+                    outputs=[
+                        srt_temperature,
+                        srt_top_p,
+                        srt_top_k,
+                        srt_repetition_penalty,
+                        srt_max_new_tokens,
+                        srt_preview_status,
+                    ],
+                )
+
                 srt_preset_expressive_btn.click(
                     fn=lambda: apply_srt_parameter_preset("稍有感情但不过火版"),
                     inputs=None,
@@ -1282,6 +1342,8 @@ def build_wrapped_demo(args: argparse.Namespace):
                         srt_job_name,
                         srt_skip_empty,
                         srt_resume_existing_job,
+                        srt_keep_consistency,
+                        srt_seed,
                         srt_temperature,
                         srt_top_p,
                         srt_top_k,
